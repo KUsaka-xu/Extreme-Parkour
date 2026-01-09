@@ -46,13 +46,14 @@ class Go2Node(UnitreeRos2Real):
         for _ in range(2):
             start_time = time.monotonic()
 
-            proprio = self.get_proprio()
+            proprio = self.get_proprio() # 53 其中yaw = 0 delta_yaw=0
             get_pro_time = time.monotonic()
-            proprio_history = self._get_history_proprio() 
-            get_hist_pro_time = time.monotonic()
+            proprio_history = self._get_history_proprio()  # 53 * 10
+            get_hist_pro_time = time.monotonic() 
 
             depth_image = self._get_depth_image()
             self.depth_latent_yaw = self.depth_encode(depth_image, proprio)
+            self.depth_latent = self.depth_latent_yaw[:, :-2]
 
             get_obs_time = time.monotonic()
 
@@ -60,7 +61,7 @@ class Go2Node(UnitreeRos2Real):
 
             turn_obs_time = time.monotonic()
 
-            action = self.policy(obs)
+            action = self.policy(obs, self.depth_latent)
             policy_time = time.monotonic()
 
             publish_time = time.monotonic()
@@ -137,6 +138,7 @@ class Go2Node(UnitreeRos2Real):
                 if self.global_counter == 0:
                     self.last_depth_image = depth_image
                 self.depth_latent_yaw = self.depth_encode(self.last_depth_image, proprio)
+                self.depth_latent = self.depth_latent_yaw[:, :-2]
                 self.last_depth_image = depth_image
                 # print('depth latent: ', self.depth_latent_yaw)
             get_obs_time = time.monotonic()
@@ -144,7 +146,7 @@ class Go2Node(UnitreeRos2Real):
             obs = self.turn_obs(proprio, self.depth_latent_yaw, proprio_history, self.n_proprio, self.n_depth_latent, self.n_hist_len)
             turn_obs_time = time.monotonic()
 
-            action = self.policy(obs)
+            action = self.policy(obs, self.depth_latent)
             policy_time = time.monotonic()
             # print('action before clip and normalize: ', action)
 
@@ -204,24 +206,16 @@ def main(args):
     env_node.get_logger().info("Motor Stiffness (kp): {}".format(env_node.p_gains))
     env_node.get_logger().info("Motor Damping (kd): {}".format(env_node.d_gains))
 
-    base_model_name = 'base_jit.pt'
+    base_model_name = 'policy.pt'
     base_model_path = os.path.join(args.logdir, base_model_name)
 
-    vision_model_name = 'vision_weight.pt'
+    vision_model_name = 'depth_latest.pt'
     vision_model_path = os.path.join(args.logdir, vision_model_name)
 
     base_model = torch.jit.load(base_model_path, map_location=device)
     base_model.eval()
 
-    estimator = base_model.estimator.estimator
-    hist_encoder = base_model.actor.history_encoder
-    actor = base_model.actor.actor_backbone
-
-    vision_model = torch.load(vision_model_path, map_location=device)
-    depth_backbone = DepthOnlyFCBackbone58x87(None, 32, 512)
-    depth_encoder = RecurrentDepthBackbone(depth_backbone, None).to(device)
-    depth_encoder.load_state_dict(vision_model['depth_encoder_state_dict'])
-    depth_encoder.to(device)
+    depth_encoder = torch.jit.load(vision_model_path, map_location=device)
     depth_encoder.eval()
     
     def turn_obs(proprio, depth_latent_yaw, proprio_history, n_proprio, n_depth_latent, n_hist_len):
@@ -231,24 +225,23 @@ def main(args):
         
         proprio[:, 6:8] = yaw
 
-        lin_vel_latent = estimator(proprio)
+        num_scan = torch.zeros(1, 132, device=proprio.device, dtype=torch.float32)
+        priv_explicit = torch.zeros(1, 9, device=proprio.device, dtype=torch.float32)
+        priv_latent = torch.zeros(1, 29, device=proprio.device, dtype=torch.float32)
 
-        activation = nn.ELU()
-        priv_latent = hist_encoder(activation, proprio_history.view(-1, n_hist_len, n_proprio))
-
-        
-        obs = torch.cat([proprio, depth_latent, lin_vel_latent, priv_latent], dim=-1)
+        obs = torch.cat([proprio, num_scan, priv_explicit, priv_latent, proprio_history], dim=-1)
 
         return obs
 
     def encode_depth(depth_image, proprio):
+        proprio[:, 6:8] = 0
         depth_latent_yaw = depth_encoder(depth_image, proprio)
         if torch.isnan(depth_latent_yaw).any():
             print('depth_latent_yaw contains nan and the depth image is: ', depth_image)
         return depth_latent_yaw
     
-    def actor_model(obs):
-        action = actor(obs)
+    def actor_model(obs, depth_latent):
+        action = base_model(obs, scandots_latent = depth_latent)
         return action
 
     env_node.register_models(turn_obs=turn_obs, depth_encode=encode_depth, policy=actor_model)

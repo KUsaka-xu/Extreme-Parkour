@@ -51,7 +51,7 @@ class VisualHandlerNode(Node):
     def __init__(self,
             cfg: dict,
             cropping: list = [0, 0, 0, 0], # top, bottom, left, right
-            rs_resolution: tuple = (480, 270), # width, height for the realsense camera)
+            rs_resolution: tuple = (640, 480), # width, height for the realsense camera)
             rs_fps: int= 30,
             depth_input_topic= "/camera/forward_depth",
             camera_info_topic= "/camera/camera_info",
@@ -79,9 +79,7 @@ class VisualHandlerNode(Node):
     def parse_args(self):
         # self.output_resolution = self.cfg["depth"]["resized"]
         self.output_resolution = [58, 87]
-        depth_range = [0.0, 3.0]
-        # depth_range = [0.0, 2.0]
-        # self.depth_range = depth_range
+        depth_range = [0.0, 2.0]
         self.depth_range = (depth_range[0], depth_range[1] * 1000) # [m] -> [mm]
 
     def start_pipeline(self):
@@ -102,14 +100,16 @@ class VisualHandlerNode(Node):
         # self.rs_decimation_filter = rs.decimation_filter()
         # self.rs_decimation_filter.set_option(rs.option.filter_magnitude, 6)
         self.rs_hole_filling_filter = rs.hole_filling_filter()
+        self.rs_hole_filling_filter.set_option(rs.option.holes_fill, 1)
         self.rs_spatial_filter = rs.spatial_filter()
-        self.rs_spatial_filter.set_option(rs.option.filter_magnitude, 5)
+        self.rs_spatial_filter.set_option(rs.option.filter_magnitude, 3)
         self.rs_spatial_filter.set_option(rs.option.filter_smooth_alpha, 0.75)
         self.rs_spatial_filter.set_option(rs.option.filter_smooth_delta, 1)
-        self.rs_spatial_filter.set_option(rs.option.holes_fill, 4)
+        self.rs_spatial_filter.set_option(rs.option.holes_fill, 3)
         self.rs_temporal_filter = rs.temporal_filter()
-        self.rs_temporal_filter.set_option(rs.option.filter_smooth_alpha, 0.75)
+        self.rs_temporal_filter.set_option(rs.option.filter_smooth_alpha, 0.7)
         self.rs_temporal_filter.set_option(rs.option.filter_smooth_delta, 1)
+        self.rs_temporal_filter.set_option(rs.option.holes_fill, 3)
         # using a list of filters to define the filtering order
         self.rs_filters = [
             # self.rs_decimation_filter,
@@ -156,15 +156,15 @@ class VisualHandlerNode(Node):
         
         # apply torch filters
         depth_image_pyt = depth_image_pyt[:,
-            self.cropping[0]: -self.cropping[1]-1,
-            self.cropping[2]: -self.cropping[3]-1,
+            self.cropping[0]: -self.cropping[1],
+            self.cropping[2]: -self.cropping[3],
         ]
 
-        depth_image_pyt = torch.clip(depth_image_pyt, self.depth_range[0], self.depth_range[1]) / (self.depth_range[1] - self.depth_range[0])
-        depth_image_pyt = resize2d(depth_image_pyt, self.output_resolution)
+        depth_image_pyt = resize2d(depth_image_pyt, self.output_resolution) #一样
 
         # publish the depth image input to ros topic
         self.get_logger().info("depth range: {}-{}".format(*self.depth_range), once= True)
+        
         depth_input_data = (
             depth_image_pyt.detach().cpu().numpy() * (self.depth_range[1] - self.depth_range[0]) + self.depth_range[0]).astype(np.uint16)[0] # (h, w) unit [mm]
         # print('depth input data: ', depth_input_data.min(), depth_input_data.max())

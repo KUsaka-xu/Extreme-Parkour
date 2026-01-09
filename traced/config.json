@@ -85,7 +85,7 @@
         },
         "decimation": 4,
         "stiffness": {
-            "joint": 40
+            "joint": 25
         }
     },
     "depth": {
