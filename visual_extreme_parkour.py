@@ -76,7 +76,7 @@ class VisualHandlerNode(Node):
         # self.output_resolution = self.cfg["depth"]["resized"]
         self.output_resolution = [58, 87]
         depth_range = [0.0, 2.0]
-        self.depth_range = (depth_range[0], depth_range[1] * 1000) # [m] -> [mm]
+        self.depth_range = (depth_range[0], depth_range[1])
 
     def start_pipeline(self):
         self.rs_pipeline = rs.pipeline()
@@ -118,6 +118,8 @@ class VisualHandlerNode(Node):
             self.rs_temporal_filter,
             self.rs_disparity_to_depth_filter,
         ]
+        
+        self.depth_scale = self.rs_profile.get_device().first_depth_sensor().get_depth_scale()
 
     def start_ros_handlers(self):
         self.depth_input_pub = self.create_publisher(
@@ -152,17 +154,17 @@ class VisualHandlerNode(Node):
         for rs_filter in self.rs_filters:
             depth_frame = rs_filter.process(depth_frame)
         
-        depth_image_pyt = torch.from_numpy(np.asanyarray(depth_frame.get_data()).astype(np.float32)).unsqueeze(0)
-        # depth_image_np = np.rot90(depth_image_np, k= 2) # k = 2 for rotate 90 degree twice   
+        
+        depth_image_np = np.asanyarray(depth_frame.get_data(), dtype=np.float32) * self.depth_scale
         
         # apply torch filters
-        depth_image_pyt = depth_image_pyt[:,
+        depth_image_pyt = depth_image_np[:,
             self.cropping[0]: -self.cropping[1],
             self.cropping[2]: -self.cropping[3],
         ]
 
         depth_image_pyt = F.interpolate(
-            depth_image_pyt.unsqueeze(1),  # [1, 1, H, W]
+            depth_image_pyt.unsqueeze(1),  
             size=self.output_resolution,   # [58, 87]
             mode="bicubic",
             align_corners=False,
@@ -171,13 +173,13 @@ class VisualHandlerNode(Node):
         # publish the depth image input to ros topic
         self.get_logger().info("depth range: {}-{}".format(*self.depth_range), once= True)
         
-        depth_input_data = (
-            depth_image_pyt.detach().cpu().numpy() * (self.depth_range[1] - self.depth_range[0]) + self.depth_range[0]).astype(np.uint16)[0] # (h, w) unit [mm]
-        # print('depth input data: ', depth_input_data.min(), depth_input_data.max())
-        
+        filt_pyt = torch.clamp(depth_image_pyt, self.depth_range[0], self.depth_range[1]) # clamp to depth range [0.0, 2.0]
+        depth_image_pyt  = (filt_pyt - self.depth_range[0]) / (self.depth_range[1] - self.depth_range[0])
+        print('depth input data: ', depth_image_pyt.min(), depth_image_pyt.max())
+
         depth_image_pyt -= 0.5 # [-0.5, 0.5])
 
-        depth_input_msg = rnp.msgify(Image, depth_input_data.astype(np.float32), encoding= "32FC1")
+        depth_input_msg = rnp.msgify(Image, depth_image_pyt.astype(np.float32), encoding= "32FC1")
         depth_input_msg.header.stamp = self.get_clock().now().to_msg()
         depth_input_msg.header.frame_id = "d435_sim_depth_link"
         self.depth_input_pub.publish(depth_input_msg)
