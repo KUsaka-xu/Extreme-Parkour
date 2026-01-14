@@ -398,7 +398,7 @@ class UnitreeRos2Real(Node):
                 vy = vy * (self.cmd_ny_range[1] - self.cmd_ny_range[0]) - self.cmd_ny_range[0]
             else:
                 vy = 0
-            self.xyyaw_command = torch.tensor([[0.5, vy, yaw]], device= self.model_device, dtype= torch.float32)
+            self.xyyaw_command = torch.tensor([[0.4, vy, yaw]], device= self.model_device, dtype= torch.float32)
 
         # refer to Unitree Remote Control data structure, msg.keys is a bit mask
         # 00000000 00000001 means pressing the 0-th button (R1)
@@ -513,7 +513,7 @@ class UnitreeRos2Real(Node):
                 self.contact_filt[:, i] = -0.5
             else:
                 self.contact_filt[:, i] = 0.5
-        return self.contact_filt
+        return torch.tensor([[0, 0, 0, 0]], device=self.model_device)
 
     def _get_depth_image(self):
         return self.depth_data
@@ -534,16 +534,15 @@ class UnitreeRos2Real(Node):
         imu = self._get_imu_obs()  # (1, 2)
         imu_time = time.monotonic()
 
-        yaw_info = self._get_delta_yaw_obs()  # (1, 3)
+        yaw_info = self._get_delta_yaw_obs()  # (1, 3) 全 0
         yaw_time = time.monotonic()
 
         commands = self._get_commands_obs()  # (1, 3)
         commands_time = time.monotonic()
 
-        if self.mode == "parkour":
-            parkour_walk = torch.tensor([[1, 0]], device= self.model_device, dtype= torch.float32) # parkour
-        elif self.mode == "walk":
-            parkour_walk = torch.tensor([[0, 1]], device= self.model_device, dtype= torch.float32) # walk
+        
+        parkour_walk = torch.tensor([[0, 0]], device= self.model_device, dtype= torch.float32) # parkour
+        
 
         dof_pos = self._get_dof_pos_obs()  # (1, 12)
         dof_pos_time = time.monotonic()
