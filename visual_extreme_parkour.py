@@ -158,18 +158,20 @@ class VisualHandlerNode(Node):
         depth_image_np = np.asanyarray(depth_frame.get_data(), dtype=np.float32) * self.depth_scale
         
         # apply torch filters
-        depth_image_pyt = depth_image_np[:,
+        depth_image_np = depth_image_np[
             self.cropping[0]: -self.cropping[1],
             self.cropping[2]: -self.cropping[3],
         ]
 
+        depth_image_pyt = torch.from_numpy(depth_image_np).unsqueeze(0).unsqueeze(0)
+        
         depth_image_pyt = F.interpolate(
-            depth_image_pyt.unsqueeze(1),  
+            depth_image_pyt,  
             size=self.output_resolution,   # [58, 87]
             mode="bicubic",
             align_corners=False,
-        ).squeeze(1)
-
+        ).squeeze(0).squeeze(0)
+        
         # publish the depth image input to ros topic
         self.get_logger().info("depth range: {}-{}".format(*self.depth_range), once= True)
         
