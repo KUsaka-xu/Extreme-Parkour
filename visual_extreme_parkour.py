@@ -177,11 +177,12 @@ class VisualHandlerNode(Node):
         
         filt_pyt = torch.clamp(depth_image_pyt, self.depth_range[0], self.depth_range[1]) # clamp to depth range [0.0, 2.0]
         depth_image_pyt  = (filt_pyt - self.depth_range[0]) / (self.depth_range[1] - self.depth_range[0])
-        print('depth input data: ', depth_image_pyt.min(), depth_image_pyt.max())
+        #print('depth input data: ', depth_image_pyt.min(), depth_image_pyt.max())
 
         depth_image_pyt -= 0.5 # [-0.5, 0.5])
 
-        depth_input_msg = rnp.msgify(Image, depth_image_pyt.astype(np.float32), encoding= "32FC1")
+        depth_image_np_final = depth_image_pyt.cpu().numpy().astype(np.float32)
+        depth_input_msg = rnp.msgify(Image, depth_image_np_final, encoding="32FC1")
         depth_input_msg.header.stamp = self.get_clock().now().to_msg()
         depth_input_msg.header.frame_id = "d435_sim_depth_link"
         self.depth_input_pub.publish(depth_input_msg)
