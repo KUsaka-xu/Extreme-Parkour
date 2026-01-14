@@ -41,10 +41,6 @@ import array
 
 from rsl_rl.modules import RecurrentDepthBackbone, DepthOnlyFCBackbone58x87
 
-@torch.no_grad()
-def resize2d(img, size):
-    return (F.adaptive_avg_pool2d(Variable(img), size)).data
-
 
 class VisualHandlerNode(Node):
     """ A wapper class for the realsense camera """
@@ -165,7 +161,12 @@ class VisualHandlerNode(Node):
             self.cropping[2]: -self.cropping[3],
         ]
 
-        depth_image_pyt = resize2d(depth_image_pyt, self.output_resolution) #一样
+        depth_image_pyt = F.interpolate(
+            depth_image_pyt.unsqueeze(1),  # [1, 1, H, W]
+            size=self.output_resolution,   # [58, 87]
+            mode="bicubic",
+            align_corners=False,
+        ).squeeze(1)
 
         # publish the depth image input to ros topic
         self.get_logger().info("depth range: {}-{}".format(*self.depth_range), once= True)
