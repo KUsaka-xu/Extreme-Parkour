@@ -163,7 +163,13 @@ class VisualHandlerNode(Node):
             self.cropping[2]: -self.cropping[3],
         ]
 
-        depth_image_pyt = torch.from_numpy(depth_image_np).unsqueeze(0).unsqueeze(0)
+        depth_image_pyt = torch.from_numpy(depth_image_np).unsqueeze(0).unsqueeze(0) # [1, 1, H, W]
+        
+        depth_image_pyt = F.gaussian_blur(
+            depth_image_pyt,
+            kernel_size= (3, 3),
+            sigma= (0.5, 0.5),
+        )
         
         depth_image_pyt = F.interpolate(
             depth_image_pyt,  
